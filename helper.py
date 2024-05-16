@@ -2,6 +2,7 @@ import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sea
 import sklearn
 from scipy.linalg import eigh, solve
@@ -498,7 +499,7 @@ def AUClnK(data, embd, metric, n_jobs=8):
                           sorted_dist_ld[:, :k]) / k for k in range(1, N - 2)])
     else:
         def parrnk(k):
-            return RNX(data, embd, k, sorted_dist_hd[:, :k],
+            return RNX(N, k, sorted_dist_hd[:, :k],
                        sorted_dist_ld[:, :k]) / k
 
         nom = np.sum(Parallel(n_jobs=n_jobs)(
@@ -537,174 +538,3 @@ class AUClnKWrapper(sklearn.base.BaseEstimator):
     def predict(X, y):
         return np.ones(len(y))
 
-
-################################################################################
-"""Plotting helper functions"""
-
-
-def sethatches(boxplot, legend, hatches=['//', '\\\\', 'xx', '||']):
-    # select the correct patches
-    patches = [patch for patch in boxplot.patches if
-               type(patch) == mpl.patches.PathPatch]
-    
-    h = hatches * (len(patches) // len(hatches))
-    
-    for patch, hatch in zip(patches, h):
-        patch.set_hatch(hatch)
-        fc = patch.get_facecolor()
-        patch.set_edgecolor(fc)
-        patch.set_facecolor('none')
-    for lp, hatch in zip(legend.get_patches(), hatches):
-        lp.set_hatch(hatch)
-        fc = lp.get_facecolor()
-        lp.set_edgecolor(fc)
-        lp.set_facecolor('none')
-
-
-def _simplify_names(x):
-    if len(x) > 10:
-        return x.split(" ")[0]
-    else:
-        return x
-
-
-def summary_plot(sig_df, effect_df, ax=None, p_threshold=0.05, simplify=True):
-    """Significance matrix to compare pipelines
-
-    Visualize significances as a heatmap with green/grey/red for significantly
-    higher/significantly lower.
-
-    Parameters
-    ----------
-    sig_df: DataFrame
-        DataFrame of pipeline x pipeline where each value is a p-value,
-    effect_df: DataFrame
-        DataFrame where each value is an effect size
-
-    Returns
-    -------
-    fig: Figure
-        Pyplot handle
-    """
-    if simplify:
-        effect_df.columns = effect_df.columns.map(_simplify_names)
-        sig_df.columns = sig_df.columns.map(_simplify_names)
-    annot_df = effect_df.copy()
-    for row in annot_df.index:
-        for col in annot_df.columns:
-            if effect_df.loc[row, col] > 0:
-                txt = "{:.2f}\np={:1.0e}".format(
-                    effect_df.loc[row, col], sig_df.loc[row, col]
-                )
-            else:
-                if sig_df.loc[row, col] < p_threshold:
-                    sig_df.loc[row, col] = 1e-110
-                txt = ""
-            annot_df.loc[row, col] = txt
-    palette = sea.light_palette("green", as_cmap=True)
-    palette.set_under(color=[1, 1, 1])
-    palette.set_over(color=[0.5, 0, 0])
-    sea.heatmap(
-        data=-np.log(sig_df),
-        annot=annot_df,
-        fmt="",
-        cmap=palette,
-        linewidths=1,
-        linecolor="0.8",
-        annot_kws={'fontsize': fontsize4, },
-        cbar=False,
-        vmin=-np.log(0.05),
-        vmax=-np.log(1e-100),
-        ax=ax,
-
-    )
-    for lb in ax.get_xticklabels():
-        lb.set_rotation(45)
-    ax.tick_params(axis="y", rotation=2)
-    ax.set_title("Algorithm comparison")
-    return fig, ax
-
-
-def clean_dataset_strings(data_):
-    data_['pipeline'] = data_['pipeline'].str[:-4]
-    data_.replace('Lee2019_MI', 'Lee2019', inplace=True, regex=True)
-    data_.replace('Zhou 2016', 'Zhou2016', inplace=True, regex=True)
-    data_.replace('001-2014', '2014-1', inplace=True, regex=True)
-    data_.replace('004-2014', '2014-4', inplace=True, regex=True)
-    data_.replace('001-2015', '2015-1', inplace=True, regex=True)
-
-    return data_
-
-
-def auc_score_plots(ax, data_path, plot_no):
-    data = pd.read_csv(data_path)
-    data = clean_dataset_strings(data)
-
-    bp = sea.boxplot(ax=ax,
-                     x='dataset',
-                     y='score',
-                     data=data,
-                     hue='pipeline',
-                     palette=color_palette,
-                     hue_order=hue_order,
-                     order=dataset_order)
-    l = ax.legend(title=legend_title_auc, **legend_params)
-    sethatches(bp, l)
-    ax.set_ylim(0.25, 1)
-    ax.set_ylabel('AUClogRNX', **label_params)
-    ax.set_xlabel('Datasets', **label_params)
-    ax.tick_params(**tick_params)
-    plt.text(s=plot_no, transform=ax.transAxes, **figure_counter_params)
-    ax.set_anchor('W')
-
-
-def scatterplots(ax, data, plot_no, kernel_string, clf_string, lim=None):
-    g = sea.scatterplot(ax=ax,
-                        x=data[:, 0],
-                        y=data[:, 1],
-                        hue=y,
-                        legend='full',
-                        palette=paradigm_palette)
-    
-    ax.set_title(kernel_string, **title_params)
-    ax.set_xlabel(f'{clf_string} Component 1', **label_params)
-    ax.set_ylabel(f'{clf_string} Component 2', **label_params)
-    ax.legend(title=legend_title_scatter, **scatter_legend_params)
-    ax.grid(False)
-    ax.set(xticklabels=[], yticklabels=[])
-    
-    plt.text(s=plot_no, transform=ax.transAxes, **figure_counter_params)
-    if not isinstance(lim, type(None)):
-        g.set(ylim=lim[0], xlim=lim[1])
-    return g
-
-
-def accuracy_plot(ax, data_, title, fig_counter):
-    plt.text(s=title, **head_text_params, transform=ax.transAxes, )
-    bp1 = sea.boxplot(x="dataset",
-                      y="score",
-                      hue="pipeline",
-                      data=data_,
-                      palette='Paired',
-                      ax=ax,
-                      hue_order=hue_order,
-                      order=dataset_order)
-    l1 = ax.legend(title=legend_title_auc, **legend_params)
-
-    sethatches(bp1, l1)
-    ax.set_ylim(0.3, 1)
-    ax.set_ylabel('Accuracy', **label_params)
-    ax.set_xlabel('Datasets', **label_params)
-    ax.tick_params(**tick_params)
-    plt.text(s=fig_counter, transform=ax.transAxes, **figure_counter_params)
-
-
-def stat_analysis_classification(ax, data_, fig_counter):
-    stats = compute_dataset_statistics(data_)
-    sig_df, effect_df = find_significant_differences(stats)
-    summary_plot(sig_df, effect_df, ax=ax)
-    ax.set_title('Statistical Analysis', **title_params_no_legend)
-    ax.tick_params(**tick_params)
-    ax.tick_params(axis='y', rotation=90)
-    plt.text(s=fig_counter, transform=ax.transAxes,
-             **figure_counter_params_no_legend)
